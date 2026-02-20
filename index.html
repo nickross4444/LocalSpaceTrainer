@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>World Space vs Local Space Explorer</title>
+    <!-- Import Three.js and OrbitControls -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #0d0d12;
+            font-family: 'Inter', sans-serif;
+            color: #e2e8f0;
+            user-select: none;
+        }
+
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            display: block;
+            cursor: grab;
+        }
+        #canvas-container:active { cursor: grabbing; }
+
+        /* UI Panel Styling */
+        #ui-panel {
+            position: absolute;
+            top: 24px;
+            left: 24px;
+            width: 360px;
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            z-index: 10;
+        }
+
+        h1 {
+            font-size: 1.25rem;
+            font-weight: 800;
+            margin: 0;
+            background: linear-gradient(to right, #60a5fa, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .subtitle {
+            font-size: 0.85rem;
+            color: #94a3b8;
+            margin: 4px 0 0 0;
+            line-height: 1.4;
+        }
+
+        /* Segmented Control */
+        .segmented-control {
+            display: flex;
+            background: rgba(0,0,0,0.4);
+            border-radius: 8px;
+            padding: 4px;
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+        .segmented-control button {
+            flex: 1;
+            padding: 10px 0;
+            border: none;
+            background: transparent;
+            color: #94a3b8;
+            font-weight: 600;
+            font-size: 0.875rem;
+            cursor: pointer;
+            border-radius: 6px;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+        .segmented-control button.active {
+            background: #4f46e5;
+            color: white;
+            box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+        }
+
+        /* Information Box */
+        .info-box {
+            background: rgba(255,255,255,0.03);
+            border-left: 3px solid #4f46e5;
+            padding: 12px 16px;
+            border-radius: 4px 8px 8px 4px;
+            font-size: 0.85rem;
+            color: #cbd5e1;
+            line-height: 1.5;
+            min-height: 85px;
+        }
+        .info-box strong { color: white; display: block; margin-bottom: 4px; }
+
+        /* Slider */
+        .slider-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .slider-group label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #e2e8f0;
+            display: flex;
+            justify-content: space-between;
+        }
+        .slider-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        input[type=range] {
+            flex: 1;
+            accent-color: #a78bfa;
+            cursor: pointer;
+        }
+
+        /* D-Pad Container */
+        .dpad-container {
+            height: 180px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: radial-gradient(circle, rgba(255,255,255,0.05) 0%, rgba(0,0,0,0) 70%);
+            border-radius: 12px;
+            position: relative;
+        }
+        
+        /* The D-pad itself - Will be rotated dynamically */
+        .dpad {
+            display: grid;
+            grid-template-columns: 45px 45px 45px;
+            grid-template-rows: 45px 45px 45px;
+            gap: 6px;
+            /* Smooth easing for rotation */
+            transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); 
+        }
+        
+        .dpad-btn {
+            background: rgba(30, 41, 59, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            color: #94a3b8;
+            font-weight: 800;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.1s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: inherit;
+            box-shadow: 0 4px 0 rgba(0,0,0,0.3);
+        }
+        .dpad-btn:hover {
+            background: rgba(51, 65, 85, 0.9);
+            color: white;
+        }
+        .dpad-btn:active, .dpad-btn.pressed {
+            background: #4f46e5;
+            color: white;
+            box-shadow: inset 0 4px 8px rgba(0,0,0,0.5);
+            border-color: #6366f1;
+            /* Inner translate to feel pressed without breaking transform matrix */
+            padding-top: 2px; 
+        }
+
+        .dpad-btn.up { grid-column: 2; grid-row: 1; }
+        .dpad-btn.left { grid-column: 1; grid-row: 2; }
+        .dpad-btn.right { grid-column: 3; grid-row: 2; }
+        .dpad-btn.down { grid-column: 2; grid-row: 3; }
+        .dpad-center { 
+            grid-column: 2; grid-row: 2; 
+            display: flex; align-items: center; justify-content: center; 
+        }
+        .dpad-center::after { 
+            content: ''; width: 12px; height: 12px; 
+            background: rgba(255,255,255,0.1); border-radius: 50%; 
+        }
+
+        .instructions {
+            text-align: center; font-size: 0.75rem; 
+            color: #64748b; margin-top: -10px;
+        }
+
+        .axis-legend {
+            display: flex; gap: 12px; font-size: 0.75rem; 
+            justify-content: center; margin-top: -5px; color: #94a3b8;
+        }
+
+        .reset-btn {
+            background: transparent; border: 1px solid rgba(255,255,255,0.2);
+            color: #e2e8f0; padding: 10px; border-radius: 8px;
+            font-weight: 600; cursor: pointer; transition: 0.2s;
+            font-family: inherit; margin-top: 10px;
+        }
+        .reset-btn:hover { background: rgba(255,255,255,0.1); }
+
+        /* NEW STYLES */
+        .hidden { display: none !important; }
+        .checkbox-group {
+            display: flex; align-items: center; gap: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer;
+            margin-bottom: -5px; color: #e2e8f0;
+        }
+        .checkbox-group input { width: 16px; height: 16px; accent-color: #a78bfa; cursor: pointer; }
+        .vert-btn-group {
+            position: absolute; left: 15px; display: flex; flex-direction: column; gap: 10px;
+        }
+        .vert-btn {
+            width: 45px; height: 45px; font-size: 0.85rem;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="canvas-container"></div>
+
+    <div id="ui-panel">
+        <div>
+            <h1>Coordinate Spaces</h1>
+            <p class="subtitle">Rotate the ship, then try moving it to see how the spaces differ.</p>
+        </div>
+        
+        <!-- Toggle Mode -->
+        <div class="segmented-control">
+            <button id="btn-world" class="active">🌍 World Space</button>
+            <button id="btn-local">🚀 Local Space</button>
+        </div>
+
+        <div class="checkbox-group">
+            <input type="checkbox" id="adv-mode-toggle" />
+            <label for="adv-mode-toggle">Advanced Mode (6DOF)</label>
+        </div>
+
+        <!-- Dynamic Info Box -->
+        <div id="info-box" class="info-box"></div>
+
+        <!-- Axis Legend -->
+        <div class="axis-legend">
+            <span style="color:#f87171; font-weight:bold;">X Axis (Right)</span>
+            <span style="color:#4ade80; font-weight:bold;">Y Axis (Up)</span>
+            <span style="color:#60a5fa; font-weight:bold;">Z Axis (Forward)</span>
+        </div>
+
+        <!-- Rotation Control -->
+        <div class="slider-group">
+            <label>Rotate Ship (Y Axis) <span id="rot-value" style="color:#a78bfa;">0°</span></label>
+            <div class="slider-row">
+                <span style="font-size:0.75rem; color:#64748b;">-180°</span>
+                <input type="range" id="rotation-slider" min="-180" max="180" value="0" />
+                <span style="font-size:0.75rem; color:#64748b;">180°</span>
+            </div>
+        </div>
+
+        <div id="adv-rotation-controls" class="slider-group hidden">
+            <label>Pitch (X Axis) <span id="rot-x-value" style="color:#f87171;">0°</span></label>
+            <div class="slider-row">
+                <span style="font-size:0.75rem; color:#64748b;">-180°</span>
+                <input type="range" id="rotation-x-slider" min="-180" max="180" value="0" />
+                <span style="font-size:0.75rem; color:#64748b;">180°</span>
+            </div>
+            <label>Roll (Z Axis) <span id="rot-z-value" style="color:#60a5fa;">0°</span></label>
+            <div class="slider-row">
+                <span style="font-size:0.75rem; color:#64748b;">-180°</span>
+                <input type="range" id="rotation-z-slider" min="-180" max="180" value="0" />
+                <span style="font-size:0.75rem; color:#64748b;">180°</span>
+            </div>
+        </div>
+
+        <!-- Movement Control -->
+        <div class="dpad-container">
+            <div id="adv-vert-controls" class="vert-btn-group hidden">
+                <button id="btn-up-y" class="dpad-btn vert-btn">E ↑</button>
+                <button id="btn-down-y" class="dpad-btn vert-btn">Q ↓</button>
+            </div>
+            <div id="dpad" class="dpad">
+                <button id="btn-up" class="dpad-btn up">W</button>
+                <button id="btn-left" class="dpad-btn left">A</button>
+                <button id="btn-right" class="dpad-btn right">D</button>
+                <button id="btn-down" class="dpad-btn down">S</button>
+                <div class="dpad-center"></div>
+            </div>
+        </div>
+        <div class="instructions">Use W/A/S/D/Q/E keys or click buttons to Move</div>
+        
+        <button id="btn-reset" class="reset-btn">Reset Transforms</button>
+    </div>
+
+    <script>
+        // --- 1. CORE SETUP ---
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0d0d12);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(15, 20, 15);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        container.appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.maxDistance = 60;
+        controls.minDistance = 5;
+        controls.maxPolarAngle = Math.PI / 2 - 0.1; // Prevent going beneath floor
+        controls.target.set(0, 0, 0);
+
+        // Lights
+        scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+        dirLight.position.set(20, 40, 20);
+        scene.add(dirLight);
+
+        // Environment Grid
+        const floor = new THREE.Mesh(
+            new THREE.PlaneGeometry(200, 200),
+            new THREE.MeshStandardMaterial({ color: 0x0a0a0f })
+        );
+        floor.rotation.x = -Math.PI / 2;
+        floor.position.y = -0.01;
+        scene.add(floor);
+
+        const gridHelper = new THREE.GridHelper(100, 50, 0x333344, 0x1a1a24);
+        scene.add(gridHelper);
+
+        // --- 2. MATERIALS FOR AXES (Fadable) ---
+        const matWorldR = new THREE.MeshLambertMaterial({ color: 0xff4444, transparent: true });
+        const matWorldG = new THREE.MeshLambertMaterial({ color: 0x44ff44, transparent: true });
+        const matWorldB = new THREE.MeshLambertMaterial({ color: 0x4488ff, transparent: true });
+
+        const matLocalR = new THREE.MeshLambertMaterial({ color: 0xff4444, transparent: true });
+        const matLocalG = new THREE.MeshLambertMaterial({ color: 0x44ff44, transparent: true });
+        const matLocalB = new THREE.MeshLambertMaterial({ color: 0x4488ff, transparent: true });
+
+        // Helper to build chunky, visible 3D arrows
+        function buildAxis(mat, rotX, rotY, rotZ, length) {
+            const group = new THREE.Group();
+            const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, length, 8), mat);
+            shaft.position.y = length / 2;
+            const head = new THREE.Mesh(new THREE.ConeGeometry(0.25, 0.8, 8), mat);
+            head.position.y = length + 0.4;
+            group.add(shaft);
+            group.add(head);
+            group.rotation.set(rotX, rotY, rotZ);
+            return group;
+        }
+
+        // --- 3. CREATE WORLD AXES ---
+        const worldAxes = new THREE.Group();
+        worldAxes.add(buildAxis(matWorldR, 0, 0, -Math.PI/2, 10)); // +X Right
+        worldAxes.add(buildAxis(matWorldG, 0, 0, 0, 10));          // +Y Up
+        worldAxes.add(buildAxis(matWorldB, -Math.PI/2, 0, 0, 10)); // -Z Forward
+        scene.add(worldAxes);
+
+        // --- 4. CREATE SHIP & LOCAL AXES ---
+        const ship = new THREE.Group();
+
+        // Ship Fuselage
+        const bodyGeo = new THREE.CylinderGeometry(0.1, 0.8, 4, 16);
+        bodyGeo.rotateX(-Math.PI/2); // Point to -Z
+        const bodyMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.4 });
+        const body = new THREE.Mesh(bodyGeo, bodyMat);
+        ship.add(body);
+
+        // Wings
+        const wingGeo = new THREE.BoxGeometry(4, 0.1, 1.2);
+        wingGeo.translate(0, 0, 1);
+        const wingMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.5 });
+        const wings = new THREE.Mesh(wingGeo, wingMat);
+        ship.add(wings);
+
+        // Tail Fin
+        const tailGeo = new THREE.BoxGeometry(0.1, 1, 1);
+        tailGeo.translate(0, 0.5, 1.2);
+        const tail = new THREE.Mesh(tailGeo, wingMat);
+        ship.add(tail);
+
+        // Cockpit (Stretched sphere)
+        const cockpitGeo = new THREE.SphereGeometry(0.35, 16, 16);
+        cockpitGeo.scale(1, 0.7, 2.2);
+        cockpitGeo.translate(0, 0.35, -0.3);
+        const cockpitMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.1 });
+        const cockpit = new THREE.Mesh(cockpitGeo, cockpitMat);
+        ship.add(cockpit);
+
+        // Engine glow
+        const engineGeo = new THREE.CylinderGeometry(0.35, 0.4, 0.2, 16);
+        engineGeo.rotateX(Math.PI/2);
+        engineGeo.translate(0, 0, 2);
+        const engineMat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
+        const engine = new THREE.Mesh(engineGeo, engineMat);
+        ship.add(engine);
+
+        // Local Axes (attached directly to ship)
+        const localAxes = new THREE.Group();
+        localAxes.add(buildAxis(matLocalR, 0, 0, -Math.PI/2, 3.5)); // +X Right
+        localAxes.add(buildAxis(matLocalG, 0, 0, 0, 3.5));          // +Y Up
+        localAxes.add(buildAxis(matLocalB, -Math.PI/2, 0, 0, 3.5)); // -Z Forward
+        localAxes.position.y = 0.5; // Lift above ship body slightly
+        ship.add(localAxes);
+
+        scene.add(ship);
+
+        // --- 5. THE INTENT ARROW (Shows calculated movement trajectory) ---
+        const intentArrow = new THREE.ArrowHelper(
+            new THREE.Vector3(0,0,-1), 
+            new THREE.Vector3(0,0,0), 
+            4.5, 
+            0xfacc15, // Yellow
+            1.2, 
+            0.6
+        );
+        intentArrow.visible = false;
+        scene.add(intentArrow);
+
+
+        // --- 6. LOGIC & STATE ---
+        let mode = 'world'; // 'world' or 'local'
+        let advMode = false;
+        const keys = { w: false, a: false, s: false, d: false, q: false, e: false };
+
+        const uiElements = {
+            btnWorld: document.getElementById('btn-world'),
+            btnLocal: document.getElementById('btn-local'),
+            advToggle: document.getElementById('adv-mode-toggle'),
+            advRotControls: document.getElementById('adv-rotation-controls'),
+            advVertControls: document.getElementById('adv-vert-controls'),
+            infoBox: document.getElementById('info-box'),
+            rotSlider: document.getElementById('rotation-slider'),
+            rotValue: document.getElementById('rot-value'),
+            rotXSlider: document.getElementById('rotation-x-slider'),
+            rotXValue: document.getElementById('rot-x-value'),
+            rotZSlider: document.getElementById('rotation-z-slider'),
+            rotZValue: document.getElementById('rot-z-value'),
+            dpad: document.getElementById('dpad'),
+            btnReset: document.getElementById('btn-reset'),
+            btns: {
+                w: document.getElementById('btn-up'),
+                s: document.getElementById('btn-down'),
+                a: document.getElementById('btn-left'),
+                d: document.getElementById('btn-right'),
+                e: document.getElementById('btn-up-y'),
+                q: document.getElementById('btn-down-y')
+            }
+        };
+
+        // UI Interactions
+        function setMode(newMode) {
+            mode = newMode;
+            if (mode === 'world') {
+                uiElements.btnWorld.classList.add('active');
+                uiElements.btnLocal.classList.remove('active');
+                uiElements.infoBox.innerHTML = `<strong>🌍 World Space Active</strong><br>Movement is mapped to the giant, static grid on the floor. Pressing 'W' ignores where the ship faces and pushes it North.`;
+                uiElements.dpad.style.transform = `rotate(0deg)`;
+            } else {
+                uiElements.btnLocal.classList.add('active');
+                uiElements.btnWorld.classList.remove('active');
+                uiElements.infoBox.innerHTML = `<strong>🚀 Local Space Active</strong><br>Movement is relative to the ship itself. Notice how the D-pad rotates to match the ship. Pressing 'W' thrusts the nose forward.`;
+            }
+        }
+
+        uiElements.btnWorld.addEventListener('click', () => setMode('world'));
+        uiElements.btnLocal.addEventListener('click', () => setMode('local'));
+        setMode('world'); // Init
+
+        // Advanced Mode Toggle
+        uiElements.advToggle.addEventListener('change', (e) => {
+            advMode = e.target.checked;
+            if (advMode) {
+                uiElements.advRotControls.classList.remove('hidden');
+                uiElements.advVertControls.classList.remove('hidden');
+            } else {
+                uiElements.advRotControls.classList.add('hidden');
+                uiElements.advVertControls.classList.add('hidden');
+                // Auto-reset advanced axes when disabling
+                ship.rotation.x = 0;
+                ship.rotation.z = 0;
+                uiElements.rotXSlider.value = 0;
+                uiElements.rotZSlider.value = 0;
+                uiElements.rotXValue.innerText = `0°`;
+                uiElements.rotZValue.innerText = `0°`;
+            }
+        });
+
+        // Slider Interaction
+        uiElements.rotSlider.addEventListener('input', (e) => {
+            const valDeg = parseFloat(e.target.value);
+            ship.rotation.y = valDeg * (Math.PI / 180);
+            uiElements.rotValue.innerText = `${valDeg}°`;
+        });
+        uiElements.rotXSlider.addEventListener('input', (e) => {
+            const valDeg = parseFloat(e.target.value);
+            ship.rotation.x = valDeg * (Math.PI / 180);
+            uiElements.rotXValue.innerText = `${valDeg}°`;
+        });
+        uiElements.rotZSlider.addEventListener('input', (e) => {
+            const valDeg = parseFloat(e.target.value);
+            ship.rotation.z = valDeg * (Math.PI / 180);
+            uiElements.rotZValue.innerText = `${valDeg}°`;
+        });
+
+        // Reset
+        uiElements.btnReset.addEventListener('click', () => {
+            ship.position.set(0, 0, 0);
+            ship.rotation.set(0, 0, 0);
+            uiElements.rotSlider.value = 0;
+            uiElements.rotValue.innerText = `0°`;
+            uiElements.rotXSlider.value = 0;
+            uiElements.rotXValue.innerText = `0°`;
+            uiElements.rotZSlider.value = 0;
+            uiElements.rotZValue.innerText = `0°`;
+        });
+
+        // Map visual states to D-pad buttons
+        function setBtnVisualState(key, isPressed) {
+            if (uiElements.btns[key]) {
+                if (isPressed) uiElements.btns[key].classList.add('pressed');
+                else uiElements.btns[key].classList.remove('pressed');
+            }
+        }
+
+        // Keyboard mapping
+        window.addEventListener('keydown', (e) => {
+            const key = e.key.toLowerCase();
+            if (keys.hasOwnProperty(key)) { keys[key] = true; setBtnVisualState(key, true); }
+        });
+        window.addEventListener('keyup', (e) => {
+            const key = e.key.toLowerCase();
+            if (keys.hasOwnProperty(key)) { keys[key] = false; setBtnVisualState(key, false); }
+        });
+
+        // Touch/Click mapping for on-screen D-pad
+        const bindBtn = (btn, key) => {
+            const press = (e) => { e.preventDefault(); keys[key] = true; setBtnVisualState(key, true); };
+            const release = (e) => { e.preventDefault(); keys[key] = false; setBtnVisualState(key, false); };
+            btn.addEventListener('mousedown', press);
+            btn.addEventListener('mouseup', release);
+            btn.addEventListener('mouseleave', release);
+            btn.addEventListener('touchstart', press, {passive: false});
+            btn.addEventListener('touchend', release, {passive: false});
+        };
+        bindBtn(uiElements.btns.w, 'w');
+        bindBtn(uiElements.btns.s, 's');
+        bindBtn(uiElements.btns.a, 'a');
+        bindBtn(uiElements.btns.d, 'd');
+        bindBtn(uiElements.btns.e, 'e');
+        bindBtn(uiElements.btns.q, 'q');
+
+
+        // --- 7. ANIMATION LOOP & PHYSICS ---
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const dt = clock.getDelta();
+
+            // 1. Calculate Intent Vector based on keys
+            let dx = 0; let dy = 0; let dz = 0;
+            if (keys.w) dz -= 1; // standard forward in 3D engines is -Z
+            if (keys.s) dz += 1;
+            if (keys.a) dx -= 1; // standard left is -X
+            if (keys.d) dx += 1;
+            if (keys.e) dy += 1; // up is +Y
+            if (keys.q) dy -= 1; // down is -Y
+
+            const isMoving = dx !== 0 || dy !== 0 || dz !== 0;
+            intentArrow.visible = isMoving;
+
+            if (isMoving) {
+                const speed = 15.0;
+                let moveVec = new THREE.Vector3(dx, dy, dz).normalize();
+                
+                if (mode === 'world') {
+                    // World Space: Add directly to global position
+                    ship.position.x += moveVec.x * speed * dt;
+                    ship.position.y += moveVec.y * speed * dt;
+                    ship.position.z += moveVec.z * speed * dt;
+                    
+                    // Intent Arrow shows pure World vector
+                    intentArrow.setDirection(moveVec);
+                } else {
+                    // Local Space: Translate along local axes
+                    ship.translateX(moveVec.x * speed * dt);
+                    ship.translateY(moveVec.y * speed * dt);
+                    ship.translateZ(moveVec.z * speed * dt);
+                    
+                    // Intent Arrow needs to show where it's going relative to world for visualization
+                    let worldDir = moveVec.clone().applyEuler(ship.rotation).normalize();
+                    intentArrow.setDirection(worldDir);
+                }
+
+                // Snap intent arrow to ship
+                intentArrow.position.copy(ship.position);
+            }
+
+            // 2. Animate opacity based on mode to draw focus ("Show, Don't Tell")
+            const lerp = (start, end, amt) => (1 - amt) * start + amt * end;
+            const targetWorldOp = mode === 'world' ? 1.0 : 0.15;
+            const targetLocalOp = mode === 'local' ? 1.0 : 0.15;
+            const fadeSpeed = 0.1;
+
+            matWorldR.opacity = lerp(matWorldR.opacity, targetWorldOp, fadeSpeed);
+            matWorldG.opacity = lerp(matWorldG.opacity, targetWorldOp, fadeSpeed);
+            matWorldB.opacity = lerp(matWorldB.opacity, targetWorldOp, fadeSpeed);
+            
+            matLocalR.opacity = lerp(matLocalR.opacity, targetLocalOp, fadeSpeed);
+            matLocalG.opacity = lerp(matLocalG.opacity, targetLocalOp, fadeSpeed);
+            matLocalB.opacity = lerp(matLocalB.opacity, targetLocalOp, fadeSpeed);
+
+            // 3. Dynamically rotate the UI D-Pad if in Local mode
+            if (mode === 'local') {
+                // In ThreeJS positive Y rotation is Counter-Clockwise. 
+                // In CSS, positive rotation is Clockwise.
+                // We multiply by -1 to mirror it accurately on UI.
+                const rotDeg = -ship.rotation.y * (180/Math.PI);
+                uiElements.dpad.style.transform = `rotate(${rotDeg}deg)`;
+            }
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        // Handle Resizing
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Start Loop
+        animate();
+    </script>
+</body>
+</html>
